@@ -1,3 +1,7 @@
+import os
+import json
+from django.conf import settings
+from django.http import JsonResponse, Http404
 import requests
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -22,6 +26,14 @@ from .serializers import (
 from django.conf import settings
 from django.shortcuts import render, redirect
 
+def get_roads_json(request):
+    # Находим файл прямо внутри папки приложения road_api
+    file_path = os.path.join(settings.BASE_DIR, 'road_api', 'roads_light.json')
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return JsonResponse(data, safe=False)
+    raise Http404("Файл дорог не найден на сервере")
 
 def logout_view(request):
     auth_logout(request)
