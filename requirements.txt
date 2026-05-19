@@ -1,3 +1,4 @@
+Pillow
 gunicorn
 asgiref==3.11.1
 blinker==1.9.0
