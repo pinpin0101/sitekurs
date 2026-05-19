@@ -456,7 +456,7 @@
                 visible.forEach(feature => {
                     const roadId = getStaticRoadId(feature);
                     const layer = L.geoJSON(feature, {
-                        renderer: staticRoadRendererRef.current,
+                        //renderer: staticRoadRendererRef.current,
                         style: () => getStaticRoadStyle(roadId, selectedId),
                         interactive: true,
                         onEachFeature: (_, roadLayer) => {
