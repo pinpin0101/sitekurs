@@ -494,7 +494,7 @@
                     mapRef.current.on('moveend zoomend', scheduleStaticRoadRender);
                 }
                 // Пишем путь БЕЗ начального слэша
-                fetch('static/roads_light.json', { credentials: 'same-origin' })
+                fetch('/static/roads_light.json', { credentials: 'same-origin' })
                     .then(res => {
                         if (!res.ok) throw new Error('roads_light.json not found');
                         return res.json();
