@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework.authtoken.views import obtain_auth_token
+from road_api.views import get_roads_json
 from road_api.views import (
     RoadViewSet, RouteViewSet, WeatherViewSet, EmergencyWarningViewSet,
     DangerousAreaViewSet, NotificationViewSet, UserRegistrationViewSet,
@@ -36,4 +37,5 @@ urlpatterns = [
     path('road-status/', road_status_view, name='road_status'),
     path('accounts/logout/', logout_view, name='logout'),
     path('accounts/', include('django.contrib.auth.urls')),
+    path('api/roads_config/', get_roads_json, name='roads_json'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
