@@ -493,7 +493,8 @@
                     staticRoadLayerRef.current = L.layerGroup().addTo(mapRef.current);
                     mapRef.current.on('moveend zoomend', scheduleStaticRoadRender);
                 }
-                fetch('/static/roads_light.json', { credentials: 'same-origin' })
+                // Пишем путь БЕЗ начального слэша
+                fetch('static/roads_light.json', { credentials: 'same-origin' })
                     .then(res => {
                         if (!res.ok) throw new Error('roads_light.json not found');
                         return res.json();
