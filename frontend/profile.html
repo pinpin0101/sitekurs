@@ -1,0 +1,288 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Профиль | RoadWatch Monitor</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: radial-gradient(circle at 10% 20%, rgb(239, 246, 255) 0%, rgb(219, 234, 254) 100%); 
+            margin: 0; 
+            padding: 0; 
+            color: #1e293b; 
+            min-height: 100vh;
+        }
+        .header { 
+            background: rgba(255, 255, 255, 0.75); 
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.5); 
+            padding: 14px 24px; 
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .back-btn { 
+            background: none; 
+            border: none; 
+            color: #2563eb; 
+            font-size: 15px; 
+            font-weight: 500;
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            gap: 8px; 
+            padding: 6px 12px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        .back-btn:hover { 
+            color: #1d4ed8; 
+            background: rgba(37, 99, 235, 0.08);
+        }
+        .page { 
+            max-width: 650px; 
+            margin: 40px auto; 
+            padding: 0 20px; 
+        }
+        .profile-card { 
+            background: rgba(255, 255, 255, 0.85); 
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6); 
+            border-radius: 24px; 
+            padding: 40px; 
+            box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08),
+                        0 0 0 1px rgba(15, 23, 42, 0.02); 
+        }
+        h1 { 
+            margin-top: 0; 
+            margin-bottom: 32px;
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #0f172a;
+        }
+        .avatar-section { 
+            display: flex; 
+            align-items: center; 
+            gap: 24px; 
+            margin-bottom: 36px; 
+            background: rgba(255, 255, 255, 0.5);
+            padding: 16px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.02);
+        }
+        .avatar { 
+            width: 84px; 
+            height: 84px; 
+            border-radius: 50%; 
+            background: #2563eb; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 32px; 
+            font-weight: 600;
+            color: white; 
+            box-shadow: 0 8px 16px rgba(37, 99, 235, 0.15);
+            overflow: hidden;
+            border: 3px solid #ffffff;
+        }
+        .avatar img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+        }
+        .profile-info h2 { 
+            margin: 0; 
+            font-size: 20px; 
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .profile-info p { 
+            margin: 4px 0 0 0; 
+            color: #64748b; 
+            font-size: 14px;
+        }
+        
+        .form-group { 
+            margin-bottom: 24px; 
+        }
+        .form-group label { 
+            display: block; 
+            font-weight: 600; 
+            font-size: 13px;
+            margin-bottom: 8px; 
+            color: #475569; 
+        }
+        input[type="text"] { 
+            width: 100%; 
+            padding: 13px 16px; 
+            border: 1px solid #cbd5e1; 
+            border-radius: 12px; 
+            font-size: 15px; 
+            background: #ffffff;
+            color: #0f172a;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        input[type="text"]:focus { 
+            border-color: #2563eb; 
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15); 
+        }
+        
+        /* Стилизация загрузки аватара */
+        .file-upload-wrapper {
+            position: relative;
+            width: 100%;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        input[type="file"]:hover {
+            border-color: #2563eb;
+            background: #ffffff;
+        }
+
+        /* Кнопки */
+        .btn-container {
+            display: flex; 
+            flex-wrap: wrap;
+            gap: 12px; 
+            margin-top: 36px;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            padding-top: 24px;
+        }
+        .btn { 
+            padding: 13px 24px; 
+            border-radius: 12px; 
+            font-weight: 600; 
+            font-size: 15px;
+            cursor: pointer; 
+            border: none; 
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary { 
+            background: #2563eb; 
+            color: white; 
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            flex: 1;
+            min-width: 180px;
+        }
+        .btn-primary:hover { 
+            background: #1d4ed8; 
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+        }
+        .btn-primary:active {
+            transform: translateY(1px);
+        }
+        .btn-secondary { 
+            background: #ffffff; 
+            color: #475569; 
+            border: 1px solid #cbd5e1; 
+        }
+        .btn-secondary:hover { 
+            background: #f8fafc; 
+            color: #0f172a;
+            border-color: #94a3b8;
+        }
+        
+        @media (max-width: 480px) {
+            .btn-container {
+                flex-direction: column;
+            }
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="window.location.href='/'">
+            <span>←</span> Вернуться на карту
+        </button>
+    </div>
+    
+    <div class="page">
+        <div class="profile-card">
+            <h1>Профиль</h1>
+            
+            <div class="avatar-section">
+                <div class="avatar" id="avatar-preview">
+                    {% if user.profile.avatar %}
+                        <img src="{{ user.profile.avatar.url }}" alt="Аватар">
+                    {% else %}
+                        {{ user.username|first|upper }}
+                    {% endif %}
+                </div>
+                <div class="profile-info">
+                    <h2>{{ user.username }}</h2>
+                    <p>{{ user.email }}</p>
+                </div>
+            </div>
+
+            <form method="post" enctype="multipart/form-data" action="{% url 'profile' %}">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="id_nickname">Никнейм</label>
+                    <input type="text" name="nickname" id="id_nickname" value="{{ user.profile.nickname|default:'' }}" placeholder="Введите никнейм">
+                </div>
+                
+                <div class="form-group">
+                    <label for="id_avatar">Аватар профиля</label>
+                    <div class="file-upload-wrapper">
+                        <input type="file" name="avatar" id="id_avatar" accept="image/*">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="id_phone">Телефон</label>
+                    <input type="text" name="phone" id="id_phone" value="{{ user.profile.phone|default:'' }}" placeholder="+7 (999) 123-45-67">
+                </div>
+                
+                <div class="form-group">
+                    <label for="id_city">Город</label>
+                    <input type="text" name="city" id="id_city" value="{{ user.profile.city|default:'' }}" placeholder="Ваш город">
+                </div>
+                
+                <div class="btn-container">
+                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                    <a href="{% url 'password_change' %}" class="btn btn-secondary">Изменить пароль</a>
+                    <a href="{% url 'logout' %}" class="btn btn-secondary">Выйти</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('id_avatar').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('avatar-preview').innerHTML = '<img src="' + e.target.result + '" alt="Аватар">';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Регистрация | RoadWatch Monitor</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: radial-gradient(circle at 10% 20%, rgb(239, 246, 255) 0%, rgb(219, 234, 254) 100%); 
+            margin: 0; 
+            padding: 0; 
+            color: #1e293b; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container { 
+            width: 100%;
+            max-width: 550px; /* Немного шире, чтобы подсказки к паролям ложились свободнее */
+            padding: 30px 20px; 
+        }
+        .card { 
+            background: rgba(255, 255, 255, 0.85); 
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6); 
+            border-radius: 24px; 
+            padding: 40px 32px; 
+            box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08),
+                        0 0 0 1px rgba(15, 23, 42, 0.02); 
+        }
+        h1 { 
+            margin-top: 0; 
+            margin-bottom: 8px;
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #0f172a;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 32px;
+        }
+        
+        /* Стилизация полей формы Django (form.as_p) */
+        form p {
+            margin-bottom: 22px;
+        }
+        form label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+        }
+        input { 
+            width: 100%; 
+            padding: 13px 16px; 
+            border-radius: 12px; 
+            border: 1px solid #cbd5e1; 
+            background: #ffffff;
+            font-size: 15px;
+            color: #0f172a;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+            background: #ffffff;
+        }
+        
+        /* Аккуратные подсказки Django (сложность пароля, требования к юзернейму) */
+        .helptext {
+            display: block;
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .helptext ul {
+            padding-left: 16px;
+            margin: 4px 0 0 0;
+        }
+        
+        /* Блок с ошибками валидации у конкретных полей */
+        .errorlist {
+            color: #b91c1c;
+            padding-left: 0;
+            list-style: none;
+            margin: 0 0 8px 0;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        button { 
+            width: 100%; 
+            padding: 14px; 
+            border-radius: 12px;
+            background: #2563eb; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            font-size: 16px; 
+            font-weight: 600;
+            margin-top: 14px;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            transition: all 0.2s ease;
+        }
+        button:hover { 
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+        }
+        button:active {
+            transform: translateY(1px);
+        }
+        
+        .links-container {
+            margin-top: 24px;
+            text-align: center;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            padding-top: 20px;
+        }
+        a { 
+            color: #2563eb; 
+            text-decoration: none; 
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.15s ease;
+        }
+        a:hover { 
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
+        
+        /* Общий блок ошибок в самом верху */
+        .error-box {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fee2e2;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Регистрация</h1>
+            <p class="subtitle">Создайте аккаунт для доступа к RoadWatch Monitor</p>
+            
+            {% if form.errors %}
+                <div class="error-box">
+                    🛑 Пожалуйста, исправьте ошибки в форме ниже.
+                </div>
+            {% endif %}
+            
+            <form method="post" action="{% url 'register' %}">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit">Зарегистрироваться</button>
+            </form>
+            
+            <div class="links-container">
+                <a href="{% url 'login' %}">Уже зарегистрированы? Войти</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

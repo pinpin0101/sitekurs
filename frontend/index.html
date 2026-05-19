@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>RoadWatch Monitor</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        
+        body { 
+            background-color: #ffffff; 
+            color: #333333; 
+            font-family: 'Inter', sans-serif; 
+            margin: 0; 
+            padding: 0; 
+        }
+
+        .custom-card { 
+            background: #ffffff; 
+            border-radius: 8px; 
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .leaflet-container { 
+            border-radius: 8px; 
+            border: 1px solid #e0e0e0;
+        }
+
+        .btn-primary {
+            background: #007aff;
+            color: white;
+            border-radius: 6px;
+            font-weight: 500;
+            border: none;
+            padding: 8px 16px;
+            transition: background 0.2s;
+        }
+
+        .btn-primary:hover { background: #0056cc; }
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #007aff;
+            border-radius: 6px;
+            border: 1px solid #007aff;
+            font-weight: 500;
+            padding: 8px 16px;
+            transition: background 0.2s;
+        }
+        .btn-secondary:hover { background: #e3f2fd; }
+        .btn-ghost {
+            background: transparent;
+            color: #666666;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 8px 16px;
+            transition: background 0.2s;
+        }
+        .btn-ghost:hover { background: #f8f9fa; }
+
+        /* Стили для маршрутизатора */
+        .route-marker-a,
+        .route-marker-b {
+            animation: bounce 0.5s ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .weather-radar-layer {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 0.8; }
+        }
+        
+        .history-card {
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .history-card:hover {
+            border-color: #007aff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+    </style>
+</head>
+<body>
+    
+    <div id="root"></div>
+
+    {% verbatim %}
+    <script type="text/babel">
+
+
+        const { useState, useEffect, useRef } = React;
+
+        function App() {
+            const [roads, setRoads] = useState([]);
+            const [activeData, setActiveData] = useState(null);
+            const [warnings, setWarnings] = useState([]);
+            const [dangerousAreas, setDangerousAreas] = useState([]);
+            const [notifications, setNotifications] = useState([]);
+            const [showNotifications, setShowNotifications] = useState(false);
+            const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+            const [user, setUser] = useState(null);
+            const [locationTitle, setLocationTitle] = useState('Выбранный участок');
+            const [userMessages, setUserMessages] = useState([]);
+            const [showAddMessage, setShowAddMessage] = useState(false);
+            const [selectedPoint, setSelectedPoint] = useState(null);
+            const [selectedMessageItem, setSelectedMessageItem] = useState(null);
+            const [selectedRoad, setSelectedRoad] = useState(null);
+            const [selectedStaticRoad, setSelectedStaticRoad] = useState(null);
+            const [roadClosures, setRoadClosures] = useState(() => {
+                try {
+                    return JSON.parse(localStorage.getItem('roadwatchRoadClosures') || '{}');
+                } catch (err) {
+                    return {};
+                }
+            });
+            const [roadClosureCategory, setRoadClosureCategory] = useState('repair');
+            const [messageComments, setMessageComments] = useState([]);
+            const [messageReactions, setMessageReactions] = useState([]);
+            const [replyToComment, setReplyToComment] = useState(null);
+            const [messageType, setMessageType] = useState('accident');
+            const [messageTitle, setMessageTitle] = useState('');
+            const [messageText, setMessageText] = useState('');
+            const [showMyMessages, setShowMyMessages] = useState(false);
+            const [showActionMenu, setShowActionMenu] = useState(false);
+            const [showWarningsPanel, setShowWarningsPanel] = useState(false);
+            const [showDangerPanel, setShowDangerPanel] = useState(false);
+            const [weatherLayer, setWeatherLayer] = useState(null);
+            const [weatherData, setWeatherData] = useState(null);
+            const [weatherTileLayer, setWeatherTileLayer] = useState(null);
+            
+            // Состояния для маршрутизатора
+            const [showRouteBuilder, setShowRouteBuilder] = useState(false);
+            const [routePointA, setRoutePointA] = useState(null);
+            const [routePointB, setRoutePointB] = useState(null);
+            const [route, setRoute] = useState(null);
+            const [isOnTrip, setIsOnTrip] = useState(false);
+            const [userLocation, setUserLocation] = useState(null);
+            const [locationEnabled, setLocationEnabled] = useState(false);
+            
+
+            const mapRef = useRef(null);
+            const markerRef = useRef(null);
+            const dangerMarkersRef = useRef([]);
+            const warningMarkersRef = useRef([]);
+            const userMessageMarkersRef = useRef([]);
+            const roadLayersRef = useRef([]);
+            const staticRoadLayerRef = useRef(null);
+            const staticRoadLayersRef = useRef({});
+            const staticRoadFeaturesRef = useRef([]);
+            const staticRoadRenderTimerRef = useRef(null);
+            const staticRoadRendererRef = useRef(null);
+            const selectedStaticRoadRef = useRef(null);
+            const roadClosuresRef = useRef(roadClosures);
+            const weatherLayerRef = useRef(null);
+            
+            // Refs для маршрутизатора
+            const routeMarkersRef = useRef({ A: null, B: null });
+            const routeLineRef = useRef(null);
+            const routeLayerGroupRef = useRef(null);
+            const showRouteBuilderRef = useRef(false);
+            const routePointARef = useRef(null);
+            const routePointBRef = useRef(null);
+            const [showActiveWarnings, setShowActiveWarnings] = React.useState(false);
+            const [showDangerousAreas, setShowDangerousAreas] = React.useState(false);
+            
+            
+            
+
+            const ROAD_CLOSURE_CATEGORIES = {
+                repair: 'Ремонт',
+                accident: 'Авария',
+                weather: 'Погода',
+                event: 'Мероприятие',
+                other: 'Другое',
+            };
+
+            // Инициализация
+            useEffect(() => {
+                if (!mapRef.current) {
+                    mapRef.current = L.map('map', { zoomControl: false, preferCanvas: true }).setView([42.87, 74.59], 12);
+                    // Меняем на темную подложку для проверки читаемости радара
+                    const tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                    const tileOptions = {
+                        attribution: '&copy; OpenStreetMap contributors, &copy; CARTO',
+                        maxZoom: 19,
+                    };
+                    L.tileLayer(tileUrl, tileOptions).addTo(mapRef.current);
+                    mapRef.current.on('click', e => {
+                        if (showRouteBuilderRef.current) {
+                            handleRouteMapClick(e);
+                        } else {
+                            handleLocationChange(e.latlng.lat, e.latlng.lng, 'Карта');
+                        }
+                    });
+                }
+                fetchCurrentUser();
+                loadArchive();
+                loadWarnings();
+                loadDangerousAreas();
+                loadNotifications();
+                loadUserMessages();
+                setTimeout(loadStaticRoads, 500);
+            }, []);
+
+            useEffect(() => {
+                roadClosuresRef.current = roadClosures;
+                selectedStaticRoadRef.current = selectedStaticRoad;
+                localStorage.setItem('roadwatchRoadClosures', JSON.stringify(roadClosures));
+                updateStaticRoadStyles(selectedStaticRoad?.id);
+            }, [roadClosures, selectedStaticRoad]);
+
+            useEffect(() => {
+                showRouteBuilderRef.current = showRouteBuilder;
+                routePointARef.current = routePointA;
+                routePointBRef.current = routePointB;
+            }, [showRouteBuilder, routePointA, routePointB]);
+
+            useEffect(() => {
+                initializeWeatherLayer(weatherLayer);
+            }, [weatherLayer]);
+
+            const parseListResponse = async (res) => {
+                const data = await res.json();
+                if (Array.isArray(data)) return data;
+                if (data && Array.isArray(data.results)) return data.results;
+                return [];
+            };
+
+            const getRoadColor = (road) => {
+                if (road.status === 'closed') return '#ffff00'; // Яркий жёлтый цвет для закрытых дорог
+                if (road.status === 'partially_restricted') return '#f59e0b';
+                return '#10b981';
+            };
+            
+            // 1. Собираем закрытые дороги из твоего roadClosuresRef в массив
+            const closedRoadsList = (staticRoadFeaturesRef.current || []).filter(
+                f => roadClosuresRef.current && roadClosuresRef.current[f.__roadId]
+            );
+
+            // ОБЪЕДИНЯЕМ: берем warnings и обязательно добавляем userMessages (из /api/user-messages/)
+            // Если у тебя стейт называется просто messages, то оставь (messages || [])
+            const allAvailablePoints = [
+                ...(warnings || []), 
+                ...(userMessages || []) 
+            ];
+
+            // 2. АКТИВНЫЕ ПРЕДУПРЕЖДЕНИЯ = Все сообщения пользователей + Закрытые дороги
+            const combinedWarnings = [
+                ...allAvailablePoints,
+                ...closedRoadsList.map(road => ({
+                    id: `closed_road_${road.__roadId}`,
+                    isRoadClosure: true,
+                    title: road.properties?.name || `Закрыт участок #${road.__roadId}`,
+                    description: "Дорога закрыта или находится на ремонте",
+                    roadFeature: road
+                }))
+            ];
+
+            // 3. ОПАСНЫЕ УЧАСТКИ = Ищем "Аварию" среди всех сообщений (включая userMessages)
+            // 3. ОПАСНЫЕ УЧАСТКИ = Ищем любые упоминания аварии во всех возможных полях объекта
+            const accidentAreas = allAvailablePoints.filter(w => {
+                // Если объект пустой, пропускаем
+                if (!w) return false;
+
+                // Собираем в одну строчку ВСЕ возможные текстовые поля объекта, которые могут прийти из Django
+                const searchString = [
+                    w.title,
+                    w.text,
+                    w.message,
+                    w.description,
+                    w.type,
+                    w.category,
+                    w.warning_type,
+                    w.message_type,
+                    w.label
+                ].map(val => String(val || '').toLowerCase()).join(' ');
+
+                // Проверяем, есть ли там заветное слово
+                return searchString.includes('авария') || 
+                       searchString.includes('аварии') || 
+                       searchString.includes('дтп') || 
+                       searchString.includes('accident');
+            });
+
+            // Вставь сюда свой личный полученный API-ключ от OpenWeatherMap
+            const OWM_API_KEY = '3a4d7025172cdfda3fd83ba141db789c';
+
+            // Функции для работы с погодными слоями
+            const getWeatherTileUrl = (layer) => {
+                const params = {
+                    temperature: `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`,
+                    wind: `https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`,
+                    precipitation: `https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`,
+                    clouds: `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`,
+                    pressure: `https://tile.openweathermap.org/map/pressure_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`,
+                };
+                return params[layer] || params.temperature;
+            };
+
+            const getWeatherLayerLabel = (layer) => {
+                const labels = {
+                    temperature: '🌡️ Температура (°C)',
+                    wind: '💨 Скорость ветра (м/с)',
+                    precipitation: '🌧️ Осадки (мм/ч)',
+                    clouds: '☁️ Облачность (%)',
+                    pressure: '🔷 Давление (гПа)',
+                };
+                return labels[layer] || 'Погода';
+            };
+
+            const initializeWeatherLayer = (layer) => {
+                if (!mapRef.current) return;
+                
+                // Всегда удаляем старый слой перед действием
+                if (weatherLayerRef.current) {
+                    mapRef.current.removeLayer(weatherLayerRef.current);
+                    weatherLayerRef.current = null;
+                }
+
+                // Если слой выключен (null), просто выходим из функции
+                if (!layer) return;
+
+                const tileUrl = getWeatherTileUrl(layer);
+                
+                // Создаем новый слой с темной подложкой и анимацией
+                weatherLayerRef.current = L.tileLayer(tileUrl, {
+                    attribution: '&copy; OpenWeatherMap',
+                    opacity: 0.8,
+                    maxZoom: 18,
+                    zIndex: 10,
+                    className: 'weather-radar-layer weather-layer-animated'
+                }).addTo(mapRef.current);
+            };
+
+            const getStaticRoadId = (feature, index = 0) => {
+                return feature?.__roadId || feature?.id || feature?.properties?.['@id'] || `road-${index}`;
+            };
+
+            const getStaticRoadName = (feature) => {
+                const props = feature?.properties || {};
+                return props.name || props.ref || props.alt_name || props.official_name || props.highway || 'Участок дороги';
+            };
+
+            const getStaticRoadStyle = (roadId, selectedId) => {
+                const isClosed = Boolean(roadClosuresRef.current[roadId]);
+                const isSelected = roadId === selectedId;
+                if (isClosed) {
+                    // Меняем цвет на жёлтый (#ffff00), а если участок при этом выделен кликом — делаем его толще (8), иначе (6)
+                    return { color: '#ffff00', weight: isSelected ? 8 : 6, opacity: 1, fillOpacity: 0 };
+                }
+                if (isSelected) {
+                    return { color: '#f59e0b', weight: 8, opacity: 1, fillOpacity: 0 };
+                }
+                return { color: '#3b82f6', weight: 8, opacity: 0.01, fillOpacity: 0 };
+            };
+
+            const getFeatureBounds = (feature) => {
+                const coords = feature?.geometry?.coordinates;
+                if (!coords) return null;
+                let minLng = Infinity;
+                let minLat = Infinity;
+                let maxLng = -Infinity;
+                let maxLat = -Infinity;
+
+                const scan = (value) => {
+                    if (!Array.isArray(value)) return;
+                    if (typeof value[0] === 'number' && typeof value[1] === 'number') {
+                        const [lng, lat] = value;
+                        minLng = Math.min(minLng, lng);
+                        minLat = Math.min(minLat, lat);
+                        maxLng = Math.max(maxLng, lng);
+                        maxLat = Math.max(maxLat, lat);
+                        return;
+                    }
+                    value.forEach(scan);
+                };
+
+                scan(coords);
+                if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null;
+                return { minLng, minLat, maxLng, maxLat };
+            };
+
+            const featureIntersectsBounds = (bbox, bounds) => {
+                return bbox.maxLat >= bounds.getSouth()
+                    && bbox.minLat <= bounds.getNorth()
+                    && bbox.maxLng >= bounds.getWest()
+                    && bbox.minLng <= bounds.getEast();
+            };
+
+            const updateStaticRoadStyles = (selectedId = selectedStaticRoad?.id) => {
+                Object.entries(staticRoadLayersRef.current).forEach(([roadId, layer]) => {
+                    if (layer?.setStyle) {
+                        layer.setStyle(getStaticRoadStyle(roadId, selectedId));
+                    }
+                });
+            };
+
+            const selectStaticRoad = (feature, layer) => {
+                const roadId = getStaticRoadId(feature);
+                const selected = { id: roadId, feature, name: getStaticRoadName(feature) };
+                setSelectedStaticRoad(selected);
+                setSelectedRoad(null);
+                setSelectedMessageItem(null);
+                setRoadClosureCategory(roadClosuresRef.current[roadId]?.category || 'repair');
+                updateStaticRoadStyles(roadId);
+                if (mapRef.current && layer?.getBounds) {
+                    mapRef.current.fitBounds(layer.getBounds(), { padding: [40, 40] });
+                }
+            };
+
+            const renderVisibleStaticRoads = () => {
+                if (!mapRef.current || staticRoadFeaturesRef.current.length === 0) return;
+                if (!staticRoadLayerRef.current) {
+                    staticRoadLayerRef.current = L.layerGroup().addTo(mapRef.current);
+                }
+                staticRoadLayerRef.current.clearLayers();
+
+                const zoom = mapRef.current.getZoom();
+                const limit = zoom < 13 ? 350 : zoom < 15 ? 700 : 1200;
+                const bounds = mapRef.current.getBounds().pad(0.18);
+                const selectedId = selectedStaticRoadRef.current?.id;
+                const visible = [];
+
+                for (const feature of staticRoadFeaturesRef.current) {
+                    if (feature.__bbox && featureIntersectsBounds(feature.__bbox, bounds)) {
+                        visible.push(feature);
+                        if (visible.length >= limit) break;
+                    }
+                }
+
+                if (selectedId && !visible.some(feature => feature.__roadId === selectedId)) {
+                    const selectedFeature = staticRoadFeaturesRef.current.find(feature => feature.__roadId === selectedId);
+                    if (selectedFeature) visible.push(selectedFeature);
+                }
+
+                staticRoadLayersRef.current = {};
+                visible.forEach(feature => {
+                    const roadId = getStaticRoadId(feature);
+                    const layer = L.geoJSON(feature, {
+                        renderer: staticRoadRendererRef.current,
+                        style: () => getStaticRoadStyle(roadId, selectedId),
+                        interactive: true,
+                        onEachFeature: (_, roadLayer) => {
+                            staticRoadLayersRef.current[roadId] = roadLayer;
+                            roadLayer.on('click', e => {
+                                if (e.originalEvent) {
+                                    L.DomEvent.stopPropagation(e.originalEvent);
+                                }
+                                // ЕСЛИ СТРОИМ МАРШРУТ — ИГНОРИРУЕМ КЛИК ПО ДОРОГЕ!
+                                if (showRouteBuilderRef.current) return;
+
+                                selectStaticRoad(feature, roadLayer);
+                            });
+                        },
+                    });
+                    staticRoadLayerRef.current.addLayer(layer);
+                });
+            };
+
+            const scheduleStaticRoadRender = () => {
+                if (staticRoadRenderTimerRef.current) {
+                    clearTimeout(staticRoadRenderTimerRef.current);
+                }
+                staticRoadRenderTimerRef.current = setTimeout(renderVisibleStaticRoads, 120);
+            };
+
+            const loadStaticRoads = () => {
+                if (!mapRef.current) return;
+                if (!staticRoadRendererRef.current) {
+                    staticRoadRendererRef.current = L.canvas({ padding: 0.35 });
+                }
+                if (!staticRoadLayerRef.current) {
+                    staticRoadLayerRef.current = L.layerGroup().addTo(mapRef.current);
+                    mapRef.current.on('moveend zoomend', scheduleStaticRoadRender);
+                }
+                fetch('/static/roads_light.json', { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('roads_light.json not found');
+                        return res.json();
+                    })
+                    .then(data => {
+                        const roadGeometryTypes = ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'];
+                        staticRoadFeaturesRef.current = (data.features || [])
+                            .filter(feature => feature?.properties?.highway && roadGeometryTypes.includes(feature?.geometry?.type))
+                            .map((feature, index) => {
+                                feature.__roadId = getStaticRoadId(feature, index);
+                                feature.__bbox = getFeatureBounds(feature);
+                                return feature;
+                            })
+                            .filter(feature => feature.__bbox);
+                        staticRoadLayersRef.current = {};
+                        renderVisibleStaticRoads();
+                    })
+                    .catch(err => console.error('Не удалось загрузить roads.json', err));
+            };
+
+            const closeStaticRoad = () => {
+                if (!selectedStaticRoad) return;
+                setRoadClosures(prev => ({
+                    ...prev,
+                    [selectedStaticRoad.id]: {
+                        category: roadClosureCategory,
+                        closedAt: new Date().toISOString(),
+                    },
+                }));
+            };
+
+            const openStaticRoad = () => {
+                if (!selectedStaticRoad) return;
+                setRoadClosures(prev => {
+                    const next = { ...prev };
+                    delete next[selectedStaticRoad.id];
+                    return next;
+                });
+            };
+
+            const buildRouteCoordinates = (route) => {
+                if (!route) return [];
+                const coords = [];
+                if (route.start_lat != null && route.start_lng != null) {
+                    coords.push([route.start_lat, route.start_lng]);
+                }
+                if (Array.isArray(route.waypoints)) {
+                    route.waypoints.forEach(point => {
+                        if (Array.isArray(point) && point.length >= 2) {
+                            coords.push([point[0], point[1]]);
+                        } else if (point && point.lat != null && point.lng != null) {
+                            coords.push([point.lat, point.lng]);
+                        }
+                    });
+                }
+                if (route.end_lat != null && route.end_lng != null) {
+                    coords.push([route.end_lat, route.end_lng]);
+                }
+                return coords;
+            };
+
+            const clearRoadLines = () => {
+                roadLayersRef.current.forEach(({ line }) => {
+                    if (mapRef.current && mapRef.current.hasLayer(line)) {
+                        mapRef.current.removeLayer(line);
+                    }
+                });
+                roadLayersRef.current = [];
+            };
+
+            const highlightRoadOnMap = (roadId) => {
+                roadLayersRef.current.forEach(({ line, id }) => {
+                    const selected = id === roadId;
+                    line.setStyle({
+                        color: getRoadColor(line.options.road),
+                        weight: selected ? 8 : 4,
+                        opacity: selected ? 1 : 0.7,
+                        dashArray: selected ? null : '6,8',
+                    });
+                });
+            };
+
+            const renderRoadLines = (roads) => {
+                if (!mapRef.current) return;
+                clearRoadLines();
+                roads.forEach(road => {
+                    const route = road.route_info || road.route;
+                    const coords = buildRouteCoordinates(route);
+                    if (!coords || coords.length < 2) return;
+
+                    const line = L.polyline(coords, {
+                        color: getRoadColor(road),
+                        weight: 4,
+                        opacity: 0.8,
+                        road,
+                    }).addTo(mapRef.current);
+
+                    line.on('click', () => {
+                        setSelectedRoad(road);
+                        setSelectedStaticRoad(null);
+                        highlightRoadOnMap(road.id);
+                        updateStaticRoadStyles(null);
+                        mapRef.current.fitBounds(line.getBounds(), { padding: [40, 40] });
+                    });
+
+                    line.bindPopup(`
+                        <div style="font-size:14px; line-height:1.4;">
+                            <strong>${road.name || road.route_name || 'Участок дороги'}</strong><br>
+                            Статус: <strong>${road.status === 'open' ? 'Открыта' : road.status === 'closed' ? 'Закрыта' : 'Частично ограничена'}</strong><br>
+                            ${road.description ? `${road.description}<br>` : ''}
+                            ${road.weather ? `Темп: ${road.weather.temperature}°C` : ''}
+                        </div>
+                    `);
+
+                    roadLayersRef.current.push({ line, id: road.id });
+                });
+                highlightRoadOnMap(selectedRoad?.id);
+            };
+
+            const fitRoadOnMap = (road) => {
+                if (!road || !mapRef.current) return;
+                const route = road.route_info || road.route;
+                const coords = buildRouteCoordinates(route);
+                if (coords.length < 2) return;
+                mapRef.current.fitBounds(coords, { padding: [40, 40] });
+            };
+
+            const selectRoad = (road) => {
+                setSelectedRoad(road);
+                setSelectedStaticRoad(null);
+                highlightRoadOnMap(road.id);
+                updateStaticRoadStyles(null);
+                fitRoadOnMap(road);
+            };
+            
+
+
+
+
+            useEffect(() => {
+                if (roads.length > 0) {
+                    renderRoadLines(roads);
+                }
+            }, [roads]);
+
+            useEffect(() => {
+                if (selectedRoad) {
+                    highlightRoadOnMap(selectedRoad.id);
+                }
+            }, [selectedRoad]);
+
+            // Функция для сохранения статуса дороги на сервере
+            const saveRoadClosureStatus = (roadId, isClosed) => {
+                fetch('/api/roads/closure/', { // Укажи тут свой URL бэкенда для дорог
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken') // Твоя функция getCookie из конца файла
+                    },
+                    body: JSON.stringify({
+                        road_id: roadId,
+                        is_closed: isClosed
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error('Ошибка сохранения на сервере');
+                    return res.json();
+                })
+                .then(data => {
+                    console.log('Статус дороги успешно сохранен в БД:', data);
+                })
+                .catch(err => console.error('Не удалось сохранить статус дороги:', err));
+            };
+
+            const loadArchive = () => {
+                fetch('/api/roads/', { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Ошибка загрузки архива');
+                        return parseListResponse(res);
+                    })
+                    .then(data => {
+                        setRoads(data);
+                        renderRoadLines(data);
+                    })
+                    .catch(() => setRoads([]));
+            };
+
+            const loadWarnings = () => {
+                fetch('/api/warnings/?unresolved_only=true', { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Ошибка загрузки предупреждений');
+                        return parseListResponse(res);
+                    })
+                    .then(data => {
+                        setWarnings(data);
+                        renderWarningMarkers(data);
+                    })
+                    .catch(() => setWarnings([]));
+            };
+
+            const loadDangerousAreas = () => {
+                fetch('/api/dangerous-areas/', { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Ошибка загрузки опасных участков');
+                        return parseListResponse(res);
+                    })
+                    .then(data => {
+                        setDangerousAreas(data);
+                        renderDangerMarkers(data);
+                    })
+                    .catch(() => setDangerousAreas([]));
+            };
+
+            const loadNotifications = () => {
+                fetch('/api/notifications/unread/', { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Нет уведомлений');
+                        return parseListResponse(res);
+                    })
+                    .then(setNotifications)
+                    .catch(() => setNotifications([]));
+            };
+
+            const loadUserMessages = () => {
+                fetch('/api/user-messages/', { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Ошибка загрузки сообщений');
+                        return parseListResponse(res);
+                    })
+                    .then(data => {
+                        setUserMessages(data);
+                        renderUserMessageMarkers(data);
+                    })
+                    .catch(() => setUserMessages([]));
+            };
+
+            const loadMessageComments = (messageId) => {
+                fetch(`/api/user-message-comments/?message=${messageId}`, { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Ошибка загрузки комментариев');
+                        return parseListResponse(res);
+                    })
+                    .then(setMessageComments)
+                    .catch(() => setMessageComments([]));
+            };
+
+            const loadMessageReactions = (messageId) => {
+                fetch(`/api/user-message-reactions/?message=${messageId}`, { credentials: 'same-origin' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Ошибка загрузки реакций');
+                        return parseListResponse(res);
+                    })
+                    .then(data => setMessageReactions(data))
+                    .catch(() => setMessageReactions([]));
+            };
+
+            useEffect(() => {
+                // Загружаем список закрытых дорог из постоянной базы данных
+                fetch('/api/roads/closed-list/') // Укажи свой URL для получения списка закрытых дорог
+                    .then(res => res.json())
+                    .then(closedRoadIds => {
+                        // closedRoadIds должен приходить в виде массива ID, например: [102, 105, 201]
+                        if (Array.isArray(closedRoadIds)) {
+                            const closuresObj = {};
+                            closedRoadIds.forEach(id => {
+                                closuresObj[id] = true;
+                            });
+                            
+                            // Записываем в реф, чтобы алгоритмы навигации и отрисовки сразу их видели
+                            roadClosuresRef.current = closuresObj;
+                            // Если используешь стейт: setRoadClosures(closuresObj);
+                            
+                            console.log('Закрытые дороги успешно загружены из БД при старте');
+                        }
+                    })
+                    .catch(err => console.error('Ошибка загрузки закрытых дорог при старте:', err));
+            }, []);
+
+            const fetchCurrentUser = async () => {
+                try {
+                    const res = await fetch('/api/auth/user/', { credentials: 'same-origin' });
+                    if (!res.ok) throw new Error('Нет пользователя');
+                    const data = await res.json();
+                    if (data.is_anonymous) {
+                        setUser(null);
+                        setShowAuthPrompt(true);
+                    } else {
+                        setUser(data);
+                        setShowAuthPrompt(false);
+                    }
+                } catch (err) {
+                    setUser(null);
+                    setShowAuthPrompt(true);
+                }
+            };
+
+            const handleDeleteMessage = async (messageId) => {
+                try {
+                    const res = await fetch(`/api/user-messages/${messageId}/`, {
+                        method: 'DELETE',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    if (!res.ok) throw new Error('Не удалось удалить сообщение');
+                    setSelectedMessageItem(null);
+                    loadUserMessages();
+                } catch (err) {
+                    console.error(err);
+                    alert('Ошибка при удалении сообщения.');
+                }
+            };
+
+            const handleMessageReaction = async (messageId, isLike) => {
+                if (!user) {
+                    setShowAuthPrompt(true);
+                    return;
+                }
+                try {
+                    const res = await fetch('/api/user-message-reactions/', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        },
+                        body: JSON.stringify({ message: messageId, is_like: isLike })
+                    });
+                    if (res.status === 401 || res.status === 403) {
+                        setShowAuthPrompt(true);
+                        return;
+                    }
+                    if (!res.ok) {
+                        const text = await res.text();
+                        throw new Error(text || 'Не удалось отправить реакцию');
+                    }
+                    loadMessageReactions(messageId);
+                } catch (err) {
+                    console.error(err);
+                    alert('Ошибка при отправке реакции.' + (err.message ? ` ${err.message}` : ''));
+                }
+            };
+
+            const handleCommentSubmit = async (e) => {
+                e.preventDefault();
+                if (!user) {
+                    setShowAuthPrompt(true);
+                    return;
+                }
+                if (!selectedMessageItem) return;
+                const text = e.target.elements.comment.value.trim();
+                if (!text) return;
+                try {
+                    const res = await fetch('/api/user-message-comments/', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        },
+                        body: JSON.stringify({ message: selectedMessageItem.id, text, parent: replyToComment?.id })
+                    });
+                    if (res.status === 401 || res.status === 403) {
+                        setShowAuthPrompt(true);
+                        return;
+                    }
+                    if (!res.ok) {
+                        const textError = await res.text();
+                        throw new Error(textError || 'Не удалось отправить комментарий');
+                    }
+                    e.target.reset();
+                    setReplyToComment(null);
+                    loadMessageComments(selectedMessageItem.id);
+                } catch (err) {
+                    console.error(err);
+                    alert('Ошибка при отправке комментария.' + (err.message ? ` ${err.message}` : ''));
+                }
+            };
+
+            const renderComment = (comment, depth = 0) => (
+                <div key={comment.id} className="rounded-2xl border border-slate-200 p-3 bg-slate-50" style={{ marginLeft: depth * 16 }}>
+                    <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0">
+                            <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">{comment.user_name}</p>
+                            <p className="text-sm font-medium">{comment.text}</p>
+                        </div>
+                        {(comment.user === user?.id || selectedMessageItem.user === user?.id) && (
+                            <button onClick={() => {
+                                fetch(`/api/user-message-comments/${comment.id}/`, {
+                                    method: 'DELETE',
+                                    credentials: 'same-origin',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': getCookie('csrftoken')
+                                    }
+                                }).then(res => {
+                                    if (!res.ok) throw new Error('Ошибка удаления комментария');
+                                    loadMessageComments(selectedMessageItem.id);
+                                }).catch(err => {
+                                    console.error(err);
+                                    alert('Не удалось удалить комментарий.');
+                                });
+                            }} className="text-[10px] text-red-500 hover:underline">Удалить</button>
+                        )}
+                    </div>
+                    <div className="flex justify-between items-center mt-2 gap-2">
+                        <p className="text-[11px] text-slate-500">{new Date(comment.created_at).toLocaleString()}</p>
+                        <button onClick={() => setReplyToComment(comment)} className="text-[11px] text-blue-600 hover:underline">Ответить</button>
+                    </div>
+                    {comment.replies && comment.replies.length > 0 && (
+                        <div className="mt-3 space-y-3">
+                            {comment.replies.map(reply => renderComment(reply, depth + 1))}
+                        </div>
+                    )}
+                </div>
+            );
+
+
+            const renderWarningMarkers = (areas) => {
+                if (!mapRef.current) return;
+                warningMarkersRef.current.forEach(marker => mapRef.current.removeLayer(marker));
+                warningMarkersRef.current = areas.map(area => {
+                    const marker = L.marker([area.latitude, area.longitude], {
+                        icon: L.divIcon({ className: 'warning-marker', html: '⚠️', iconSize: [28, 28] })
+                    }).addTo(mapRef.current);
+                    marker.bindPopup(`<strong>${area.title || area.warning_type}</strong><br>${area.description}`);
+                    marker.on('click', () => {
+                        alert(`Предупреждение: ${area.title || area.warning_type}\n${area.description}`);
+                    });
+                    return marker;
+                });
+            };
+
+            const openNotification = async (notification) => {
+                if (notification.related_road_id) {
+                    const savedRoad = roads.find(r => r.id === notification.related_road_id);
+                    if (savedRoad) {
+                        const parts = savedRoad.name.split('|').map(p => p.trim());
+                        if (parts.length === 3) {
+                            const lat = parseFloat(parts[1]);
+                            const lng = parseFloat(parts[2]);
+                            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+                                handleLocationChange(lat, lng, `${savedRoad.route_name || 'Сохраненный участок'}`, true);
+                            }
+                        }
+                    }
+                }
+                if (!notification.is_read) {
+                    await fetch(`/api/notifications/${notification.id}/mark_as_read/`, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        }
+                    });
+                    loadNotifications();
+                }
+            };
+
+            const renderDangerMarkers = (areas) => {
+                if (!mapRef.current) return;
+                dangerMarkersRef.current.forEach(marker => mapRef.current.removeLayer(marker));
+                dangerMarkersRef.current = areas.map(area => {
+                    const marker = L.marker([area.latitude, area.longitude]).addTo(mapRef.current);
+                    marker.bindPopup(`<strong>${area.danger_type}</strong><br>${area.location}`);
+                    return marker;
+                });
+            };
+
+            const renderUserMessageMarkers = (messages) => {
+                if (!mapRef.current) return;
+                userMessageMarkersRef.current.forEach(marker => mapRef.current.removeLayer(marker));
+                userMessageMarkersRef.current = messages.map(msg => {
+                    const icon = L.divIcon({
+                        className: 'user-message-marker',
+                        html: '📍',
+                        iconSize: [28, 28]
+                    });
+                    const marker = L.marker([msg.latitude, msg.longitude], { icon }).addTo(mapRef.current);
+                    marker.bindTooltip(msg.title, { permanent: false, direction: 'top' });
+                    marker.on('click', () => {
+                        if (showRouteBuilderRef.current) return;
+                        setSelectedMessageItem(msg);
+                        setSelectedPoint(null);
+                        setShowAddMessage(false);
+                        loadMessageComments(msg.id);
+                        loadMessageReactions(msg.id);
+                        fetchWeather(msg.latitude, msg.longitude, msg.title, false);
+                    });
+                    return marker;
+                });
+            };
+
+            const handleLocationChange = (lat, lng, title = 'Выбранный участок', fromArchive = false) => {
+                if (!mapRef.current || Number.isNaN(lat) || Number.isNaN(lng)) return;
+                if (!user) setShowAuthPrompt(true);
+                mapRef.current.invalidateSize();
+                mapRef.current.flyTo([lat, lng], 14, { animate: true, duration: 1.5 });
+
+                if (markerRef.current) {
+                    markerRef.current.setLatLng([lat, lng]);
+                } else {
+                    markerRef.current = L.marker([lat, lng]).addTo(mapRef.current);
+                }
+
+                setSelectedPoint({ lat, lng, title, fromArchive });
+                setSelectedMessageItem(null);
+                setShowActionMenu(true);
+                fetchWeather(lat, lng, title, fromArchive);
+            };
+
+            const mapWeatherCode = (code) => {
+                const weatherCodes = {
+                    0: 'Ясно',
+                    1: 'Малооблачно',
+                    2: 'Облачно',
+                    3: 'Пасмурно',
+                    45: 'Туман',
+                    48: 'Морозный туман',
+                    51: 'Легкий дождь',
+                    53: 'Умеренный дождь',
+                    55: 'Сильный дождь',
+                    61: 'Ливневый дождь',
+                    63: 'Дождь',
+                    65: 'Сильный дождь',
+                    71: 'Слабый снег',
+                    73: 'Умеренный снег',
+                    75: 'Сильный снег',
+                    95: 'Гроза',
+                    99: 'Град'
+                };
+                return weatherCodes[code] || 'Неизвестно';
+            };
+
+            const fetchWeather = async (lat, lng, title, fromArchive) => {
+                try {
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=relativehumidity_2m,visibility,precipitation&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error('Ошибка загрузки погоды');
+                    const data = await res.json();
+                    const currentHour = new Date(data.current_weather.time).getHours();
+                    const humidityIndex = data.hourly.time.findIndex(t => new Date(t).getHours() === currentHour);
+                    const humidity = humidityIndex >= 0 ? data.hourly.relativehumidity_2m[humidityIndex] : 0;
+                    const visibility = humidityIndex >= 0 ? Math.round(data.hourly.visibility[humidityIndex]) : 0;
+                    const precipitationValue = humidityIndex >= 0 ? data.hourly.precipitation[humidityIndex] : 0;
+                    const precipitation = precipitationValue > 0 ? 'Есть осадки' : 'Без осадков';
+                    const iceProbability = data.current_weather.temperature <= 0 ? 80 : data.current_weather.temperature < 3 ? 55 : 10;
+                    const mcsWarning = iceProbability >= 50 ? 'Высокая вероятность гололеда. Будьте осторожны.' : '';
+
+                    setActiveData({
+                        title,
+                        lat,
+                        lng,
+                        temp: Math.round(data.current_weather.temperature),
+                        hum: humidity,
+                        wind: Math.round(data.current_weather.windspeed),
+                        precipitation,
+                        visibility,
+                        iceProbability,
+                        mcsWarning,
+                        weatherText: mapWeatherCode(data.current_weather.weathercode),
+                        forecast: data.daily.time.slice(0, 4).map((t, i) => ({
+                            day: new Date(t).toLocaleDateString('ru', { weekday: 'short' }),
+                            max: Math.round(data.daily.temperature_2m_max[i]),
+                            min: Math.round(data.daily.temperature_2m_min[i])
+                        })),
+                        isArchive: fromArchive,
+                    });
+                } catch (err) {
+                    console.error(err);
+                    setActiveData(null);
+                    alert('Не удалось загрузить данные погоды. Попробуйте еще раз.');
+                }
+            };
+
+            const saveRecord = () => {
+                if (!user) {
+                    setShowAuthPrompt(true);
+                    return;
+                }
+                const status = activeData.temp <= 0 ? 'closed' : activeData.temp < 5 ? 'partially_restricted' : 'open';
+                fetch('/api/roads/', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        name: `Участок|${activeData.lat.toFixed(2)}|${activeData.lng.toFixed(2)}`,
+                        status,
+                        description: `${activeData.weatherText}, ${activeData.precipitation}`,
+                        weather: {
+                            temperature: activeData.temp,
+                            precipitation: activeData.precipitation,
+                            wind_speed: activeData.wind,
+                            visibility: activeData.visibility,
+                            ice_probability: activeData.iceProbability,
+                            mcs_warning: activeData.mcsWarning
+                        }
+                    })
+                }).then(async res => {
+                    if (res.status === 403) {
+                        setShowAuthPrompt(true);
+                        return;
+                    }
+                    if (!res.ok) {
+                        const error = await res.text();
+                        throw new Error(error);
+                    }
+                    loadArchive();
+                    loadNotifications();
+                    setActiveData(null);
+                    alert('Данные успешно внесены в реестр ИС');
+                }).catch(err => {
+                    console.error(err);
+                    alert('Ошибка при сохранении данных.');
+                });
+            };
+
+            const handleAddMessage = (e) => {
+                e.preventDefault();
+                if (!selectedPoint) {
+                    alert('Выберите точку на карте, чтобы оставить сообщение.');
+                    return;
+                }
+                const data = {
+                    message_type: messageType,
+                    title: messageTitle,
+                    message: messageText,
+                    latitude: selectedPoint.lat,
+                    longitude: selectedPoint.lng
+                };
+                fetch('/api/user-messages/', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify(data)
+                }).then(async res => {
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        throw new Error(errorText || 'Ошибка отправки сообщения');
+                    }
+                    setShowAddMessage(false);
+                    setMessageTitle('');
+                    setMessageText('');
+                    setMessageType('accident');
+                    loadUserMessages();
+                    setShowActionMenu(false);
+                }).catch(err => {
+                    console.error('Message error:', err);
+                    alert('Ошибка при добавлении сообщения: ' + err.message);
+                });
+            };
+
+            // ===== ФУНКЦИИ ДЛЯ МАРШРУТИЗАТОРА =====
+            
+            const calculateDistance = (lat1, lng1, lat2, lng2) => {
+                const R = 6371;
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLng = (lng2 - lng1) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                          Math.sin(dLng/2) * Math.sin(dLng/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return R * c;
+            };
+            
+            // Пример твоей функции переключения статуса дороги:
+            const toggleRoadClosure = (roadId) => {
+                const currentStatus = Boolean(roadClosuresRef.current[roadId]);
+                const newStatus = !currentStatus;
+
+                // 1. Обновляем локально в приложении (как и было)
+                roadClosuresRef.current[roadId] = newStatus;
+                // если у тебя есть setRoadClosures, обновляешь и его:
+                // setRoadClosures({...roadClosuresRef.current});
+
+                // 2. ДОБАВЛЯЕМ: Отправляем статус в базу данных, чтобы он не пропал!
+                saveRoadClosureStatus(roadId, newStatus);
+                
+                // Перерисовываем карту, чтобы применились цвета
+                if (geojsonLayerRef.current) {
+                    geojsonLayerRef.current.refresh(); // или твоя функция перерисовки styles
+                }
+            };
+
+            const pointToLineDistance = (lat, lng, lat1, lng1, lat2, lng2) => {
+                const A = lng - lng1;
+                const B = lat - lat1;
+                const C = lng2 - lng1;
+                const D = lat2 - lat1;
+                const dot = A * C + B * D;
+                const lenSq = C * C + D * D;
+                let param = -1;
+                if (lenSq !== 0) param = dot / lenSq;
+                
+                let xx, yy;
+                if (param < 0) {
+                    xx = lng1;
+                    yy = lat1;
+                } else if (param > 1) {
+                    xx = lng2;
+                    yy = lat2;
+                } else {
+                    xx = lng1 + param * C;
+                    yy = lat1 + param * D;
+                }
+                
+                const dx = lng - xx;
+                const dy = lat - yy;
+                return Math.sqrt(dx * dx + dy * dy);
+            };
+
+            const extractRoadCoordinates = (geometry) => {
+                if (!geometry || !geometry.coordinates) return [];
+                
+                const coords = [];
+                const type = geometry.type;
+                
+                if (type === 'LineString' && Array.isArray(geometry.coordinates[0]) && typeof geometry.coordinates[0][0] === 'number') {
+                    geometry.coordinates.forEach(([lng, lat]) => {
+                        coords.push([lat, lng]);
+                    });
+                } else if (type === 'MultiLineString') {
+                    geometry.coordinates.forEach(line => {
+                        line.forEach(([lng, lat]) => {
+                            coords.push([lat, lng]);
+                        });
+                    });
+                }
+                
+                return coords;
+            };
+
+            const buildSafeRoute = (pointA, pointB) => {
+                if (!pointA || !pointB) return;
+
+                // Запрос к OSRM для получения пути строго по дорогам
+                const url = `https://router.project-osrm.org/route/v1/driving/${pointA.lng},${pointA.lat};${pointB.lng},${pointB.lat}?geometries=geojson`;
+                
+                fetch(url)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.routes && data.routes.length > 0) {
+                            // Переворачиваем полученные из OSRM координаты [lng, lat] в [lat, lng] для Leaflet
+                            const waypoints = data.routes[0].geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                            
+                            // Записываем правильный маршрут в стейт
+                            setRoute(waypoints);
+                            
+                            // Вызываем твою родную функцию отрисовки синей линии
+                            drawRoute(waypoints);
+
+                            // Центрируем карту по границам нового маршрута, если она инициализирована
+                            if (mapRef.current && routeLineRef.current) {
+                                mapRef.current.fitBounds(routeLineRef.current.getBounds(), { padding: [50, 50] });
+                            }
+                        }
+                    })
+                    .catch(err => console.error("Ошибка построения маршрута через OSRM:", err));
+            };
+
+            const updateRouteMarker = (point, label, coordinates) => {
+                if (!mapRef.current) return;
+                
+                if (label === 'A') {
+                    if (routeMarkersRef.current.A) {
+                        mapRef.current.removeLayer(routeMarkersRef.current.A);
+                    }
+                    const icon = L.divIcon({
+                        className: 'route-marker-a',
+                        html: '<div style="background: #ff6b6b; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">A</div>',
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                    });
+                    routeMarkersRef.current.A = L.marker(coordinates, { icon }).addTo(mapRef.current);
+                } else if (label === 'B') {
+                    if (routeMarkersRef.current.B) {
+                        mapRef.current.removeLayer(routeMarkersRef.current.B);
+                    }
+                    const icon = L.divIcon({
+                        className: 'route-marker-b',
+                        html: '<div style="background: #51cf66; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">B</div>',
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                    });
+                    routeMarkersRef.current.B = L.marker(coordinates, { icon }).addTo(mapRef.current);
+                }
+            };
+
+            const drawRoute = (waypoints) => {
+                if (!mapRef.current || waypoints.length < 2) return;
+                
+                if (routeLineRef.current) {
+                    mapRef.current.removeLayer(routeLineRef.current);
+                }
+                
+                // Рисуем маршрут синей линией по дорогам
+                routeLineRef.current = L.polyline(waypoints, {
+                    color: '#0066ff',
+                    weight: 6,
+                    opacity: 0.9,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                    zIndex: 1000
+                }).addTo(mapRef.current);
+                
+                // Добавляем легкую тень для лучшей видимости
+                routeLineRef.current.bringToFront();
+            };
+
+            const clearRoute = () => {
+                if (routeLineRef.current && mapRef.current) {
+                    mapRef.current.removeLayer(routeLineRef.current);
+                    routeLineRef.current = null;
+                }
+                if (routeMarkersRef.current.A && mapRef.current) {
+                    mapRef.current.removeLayer(routeMarkersRef.current.A);
+                    routeMarkersRef.current.A = null;
+                }
+                if (routeMarkersRef.current.B && mapRef.current) {
+                    mapRef.current.removeLayer(routeMarkersRef.current.B);
+                    routeMarkersRef.current.B = null;
+                }
+                setRoute(null);
+            };
+
+            const requestUserLocation = () => {
+                if (!navigator.geolocation) {
+                    alert('Геолокация не поддерживается вашим браузером');
+                    return;
+                }
+                
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        const loc = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                        setUserLocation(loc);
+                        setLocationEnabled(true);
+                        
+                        // ИСПРАВЛЕНО: Синхронизируем и стейт, и реф точки А
+                        routePointARef.current = loc;
+                        setRoutePointA(loc);
+                        updateRouteMarker(loc, 'A', [loc.lat, loc.lng]);
+                    },
+                    error => {
+                        alert('Ошибка получения геолокации: ' + error.message);
+                    }
+                );
+            };
+
+            const handleRouteMapClick = (e) => {
+                if (!showRouteBuilderRef.current) return;
+                const latlng = e.latlng;
+                const point = { lat: latlng.lat, lng: latlng.lng };
+                
+                if (!routePointARef.current) {
+                    // ИСПРАВЛЕНО: Записываем в реф, чтобы код его видел при втором клике
+                    routePointARef.current = point;
+                    setRoutePointA(point);
+                    updateRouteMarker(point, 'A', [point.lat, point.lng]);
+                } else if (!routePointBRef.current) {
+                    // ИСПРАВЛЕНО: Записываем в реф точки Б
+                    routePointBRef.current = point;
+                    setRoutePointB(point);
+                    updateRouteMarker(point, 'B', [point.lat, point.lng]);
+                    
+                    // Автоматически строим маршрут (Отрисовка и сохранение теперь внутри асинхронного OSRM)
+                    buildSafeRoute(routePointARef.current, point);
+                } else {
+                    // Переключалка: Если обе точки уже стоят, клик сбрасывает карту и ставит новую точку А
+                    routePointARef.current = point;
+                    routePointBRef.current = null;
+                    setRoutePointA(point);
+                    setRoutePointB(null);
+                    clearRoute();
+                    updateRouteMarker(point, 'A', [point.lat, point.lng]);
+                }
+            };
+
+            const startTrip = () => {
+                if (!routePointA || !routePointB) {
+                    alert('Пожалуйста, выберите точки A и B');
+                    return;
+                }
+                setIsOnTrip(true);
+            };
+
+            const endTrip = () => {
+                setIsOnTrip(false);
+                clearRoute();
+                
+                routePointARef.current = null;
+                routePointBRef.current = null;
+                setRoutePointA(null);
+                setRoutePointB(null);
+                
+                // ИСПРАВЛЕНИЕ: Сбрасываем выделенные дороги и сообщения при закрытии маршрута
+                setSelectedStaticRoad(null);
+                setSelectedRoad(null);
+                setSelectedMessageItem(null);
+                setShowActionMenu(false);
+                
+                setShowRouteBuilder(false);
+            };
+
+            const removePoint = (label) => {
+                if (label === 'A') {
+                    if (routeMarkersRef.current.A && mapRef.current) {
+                        mapRef.current.removeLayer(routeMarkersRef.current.A);
+                        routeMarkersRef.current.A = null;
+                    }
+                    routePointARef.current = null;
+                    setRoutePointA(null);
+                    if (routePointBRef.current) {
+                        routePointBRef.current = null;
+                        setRoutePointB(null);
+                        clearRoute();
+                    }
+                } else if (label === 'B') {
+                    if (routeMarkersRef.current.B && mapRef.current) {
+                        mapRef.current.removeLayer(routeMarkersRef.current.B);
+                        routeMarkersRef.current.B = null;
+                    }
+                    routePointBRef.current = null;
+                    setRoutePointB(null);
+                    clearRoute();
+                }
+            };
+
+            return (
+                <div className="min-h-screen pb-10">
+<header className="px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center max-w-7xl mx-auto gap-4">
+        <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">R</div>
+            <div>
+                <h1 className="text-xl font-semibold tracking-tight">RoadWatch <span className="text-blue-500">Monitor</span></h1>
+                <p className="text-sm opacity-60">Список трасс, статус дорог и личный кабинет.</p>
+            </div>
+        </div>
+        <div className="flex items-center gap-3">
+            <button onClick={() => {
+                if (!user) {
+                    setShowAuthPrompt(true);
+                    return;
+                }
+                setShowNotifications(!showNotifications);
+                setShowMyMessages(false);
+            }} className="text-sm text-blue-600 hover:underline flex items-center gap-2">
+                <span>🔔</span>
+                {notifications.filter(n => !n.is_read).length > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-full bg-red-500 text-white px-2 text-[10px] h-5">{notifications.filter(n => !n.is_read).length}</span>
+                )}
+            </button>
+            {user && (
+                <button
+                    onClick={() => {
+                        setShowMyMessages(!showMyMessages);
+                        setShowNotifications(false); // 👈 закрываем уведомления
+                    }} 
+                    className="text-sm text-slate-700 hover:text-slate-900 flex items-center gap-2 px-3 py-2 rounded-full border border-slate-200 bg-white shadow-sm"
+                >
+                    <span>📄</span>
+                    <span className="hidden sm:inline">Мои</span>
+                </button>
+            )}
+            {!user && <a href="/accounts/register/" className="text-sm text-blue-600 hover:underline">Регистрация</a>}
+            {!user && <a href="/accounts/login/" className="text-sm text-blue-600 hover:underline">Вход</a>}
+            {user && (
+                <a href="/accounts/profile/" className="flex items-center gap-2 text-slate-700 hover:text-slate-900">
+                    {user.profile?.avatar ? (
+                        <img src={user.profile.avatar} alt="Аватар" className="w-9 h-9 rounded-full object-cover" />
+                    ) : (
+                        <span className="text-2xl">👤</span>
+                    )}
+                </a>
+            )}
+        </div>
+    </header>
+
+                    {showNotifications && user && (
+                        <div className="fixed right-6 top-24 z-50 w-[360px] max-w-full bg-white border border-gray-200 shadow-2xl rounded-3xl overflow-hidden">
+                            <div className="p-5 border-b border-gray-100 bg-slate-50">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <h2 className="font-semibold">Уведомления</h2>
+                                        <p className="text-xs text-slate-500">Нажмите на уведомление, чтобы увидеть участок на карте</p>
+                                    </div>
+                                    <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+                                </div>
+                            </div>
+                            <div className="max-h-[400px] overflow-y-auto">
+                                {notifications.length === 0 ? (
+                                    <div className="p-5 text-sm text-slate-500">Нет новых уведомлений.</div>
+                                ) : notifications.map(notification => (
+                                    <button
+                                        key={notification.id}
+                                        onClick={() => openNotification(notification)}
+                                        className="w-full text-left p-4 border-b border-gray-100 hover:bg-slate-50"
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div>
+                                                <p className="font-medium text-slate-900">{notification.title}</p>
+                                                <p className="text-xs text-slate-500 mt-1">{notification.message}</p>
+                                            </div>
+                                            {!notification.is_read && <span className="text-[10px] uppercase tracking-[0.2em] text-white bg-blue-600 rounded-full px-2 py-1">Новое</span>}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {showAddMessage && user && selectedPoint && (
+                        <div className="fixed bottom-6 left-6 z-50 w-[360px] max-w-full bg-white border border-gray-200 shadow-2xl rounded-3xl overflow-hidden">
+                            <div className="p-5 border-b border-gray-100 bg-slate-50">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-lg font-semibold">Добавить сообщение</h3>
+                                        <p className="text-xs text-slate-500 mt-1">{selectedPoint.lat.toFixed(4)}, {selectedPoint.lng.toFixed(4)}</p>
+                                    </div>
+                                    <button onClick={() => setShowAddMessage(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+                                </div>
+                            </div>
+                            <form onSubmit={handleAddMessage} className="p-5 space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Тип сообщения</label>
+                                    <select value={messageType} onChange={e => setMessageType(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg" required>
+                                        <option value="accident">Авария</option>
+                                        <option value="traffic_jam">Пробка</option>
+                                        <option value="road_work">Дорожные работы</option>
+                                        <option value="weather">Погода</option>
+                                        <option value="other">Прочее</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Заголовок</label>
+                                    <input value={messageTitle} onChange={e => setMessageTitle(e.target.value)} type="text" className="w-full p-2 border border-gray-300 rounded-lg" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Сообщение</label>
+                                    <textarea value={messageText} onChange={e => setMessageText(e.target.value)} rows="3" className="w-full p-2 border border-gray-300 rounded-lg" required></textarea>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-medium">Отправить</button>
+                                    <button type="button" onClick={() => setShowAddMessage(false)} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 text-sm font-medium">Отмена</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    <section className="max-w-7xl mx-auto px-6 py-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {/* Карточка 1: Активные предупреждения */}
+                        <div 
+                            className={`custom-card p-5 cursor-pointer transition-all hover:bg-slate-50 ${showActiveWarnings ? 'border-blue-500 ring-2 ring-blue-100' : ''}`}
+                            onClick={() => {
+                                setShowActiveWarnings(!showActiveWarnings);
+                                setShowDangerousAreas(false);
+                            }}
+                        >
+                            <p className="text-sm text-gray-500 flex items-center gap-2">⚠️ Активные предупреждения</p>
+                            {/* ИСПОЛЬЗУЕМ КОМБИНИРОВАННЫЙ МАССИВ */}
+                            <p className="mt-4 text-3xl font-semibold">{combinedWarnings.length}</p>
+                        </div>
+
+                        {/* Карточка 2: Опасные участки */}
+                        <div 
+                            className={`custom-card p-5 cursor-pointer transition-all hover:bg-slate-50 ${showDangerousAreas ? 'border-amber-500 ring-2 ring-amber-100' : ''}`}
+                            onClick={() => {
+                                setShowDangerousAreas(!showDangerousAreas);
+                                setShowActiveWarnings(false);
+                            }}
+                        >
+                            <p className="text-sm text-gray-500 flex items-center gap-2">🛑 Опасные участки</p>
+                            {/* ИСПОЛЬЗУЕМ ТОЛЬКО АВАРИИ */}
+                            <p className="mt-4 text-3xl font-semibold">{accidentAreas.length}</p>
+                        </div>
+                    </section>
+
+                    <main className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div className="lg:col-span-8 space-y-6">
+                            <div className="relative">
+                            <div id="map" className="h-[450px] shadow-sm z-10 custom-card"></div>
+                            
+                            {/* Левая панель с кнопками погодных слоев */}
+                            <div className="absolute left-2 top-2 z-20 flex flex-col gap-2 bg-white rounded-lg shadow-lg p-2" style={{ width: '120px' }}>
+                                <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#666', padding: '4px', textAlign: 'center', borderBottom: '1px solid #e0e0e0', marginBottom: '4px' }}>Погода</div>
+                                
+                                <button 
+                                    onClick={() => setWeatherLayer(prev => prev === 'temperature' ? null : 'temperature')}
+                                    style={{
+                                        padding: '6px 8px',
+                                        backgroundColor: weatherLayer === 'temperature' ? '#007aff' : '#f5f5f5',
+                                        color: weatherLayer === 'temperature' ? 'white' : '#333',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: '500',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="Температура"
+                                >
+                                    {weatherLayer === 'temperature' ? ' 🌡️ Темп.' : '🌡️ Темп.'}
+                                </button>
+
+                                <button 
+                                    onClick={() => setWeatherLayer(prev => prev === 'wind' ? null : 'wind')}
+                                    style={{
+                                        padding: '6px 8px',
+                                        backgroundColor: weatherLayer === 'wind' ? '#007aff' : '#f5f5f5',
+                                        color: weatherLayer === 'wind' ? 'white' : '#333',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: '500',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="Ветер"
+                                >
+                                    {weatherLayer === 'wind' ? ' 💨 Ветер' : '💨 Ветер'}
+                                </button>
+
+                                <button 
+                                    onClick={() => setWeatherLayer(prev => prev === 'precipitation' ? null : 'precipitation')}
+                                    style={{
+                                        padding: '6px 8px',
+                                        backgroundColor: weatherLayer === 'precipitation' ? '#007aff' : '#f5f5f5',
+                                        color: weatherLayer === 'precipitation' ? 'white' : '#333',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: '500',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="Осадки"
+                                >
+                                    {weatherLayer === 'precipitation' ? ' 🌧️ Осадки' : '🌧️ Осадки'}
+                                </button>
+
+                                <button 
+                                    onClick={() => setWeatherLayer(prev => prev === 'clouds' ? null : 'clouds')}
+                                    style={{
+                                        padding: '6px 8px',
+                                        backgroundColor: weatherLayer === 'clouds' ? '#007aff' : '#f5f5f5',
+                                        color: weatherLayer === 'clouds' ? 'white' : '#333',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: '500',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="Облачность"
+                                >
+                                    {weatherLayer === 'clouds' ? ' ☁️ Облака' : '☁️ Облака'}
+                                </button>
+
+                                <button 
+                                    onClick={() => setWeatherLayer(prev => prev === 'pressure' ? null : 'pressure')}
+                                    style={{
+                                        padding: '6px 8px',
+                                        backgroundColor: weatherLayer === 'pressure' ? '#007aff' : '#f5f5f5',
+                                        color: weatherLayer === 'pressure' ? 'white' : '#333',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: '500',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="Давление"
+                                >
+                                    {weatherLayer === 'pressure' ? ' 🔷 Давл.' : '🔷 Давл.'}
+                                </button>
+                                
+                                {/* Легенда погодного слоя */}
+                                <div style={{ fontSize: '9px', color: '#666', padding: '6px', borderTop: '1px solid #e0e0e0', marginTop: '4px', textAlign: 'center', lineHeight: '1.3' }}>
+                                    <strong>{getWeatherLayerLabel(weatherLayer)}</strong>
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#999', padding: '4px', textAlign: 'center', background: '#f9f9f9', borderRadius: '2px', marginTop: '2px' }}>
+                                    Данные из OpenWeatherMap
+                                </div>
+                            </div>
+                            
+                            {selectedPoint && !showAddMessage && (
+                                <div className="absolute right-16 top-5 z-20 flex flex-col gap-3">
+                                    <button onClick={() => { if (!user) { setShowAuthPrompt(true); return; } setShowAddMessage(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-700 transition">
+                                        💬 Сообщение
+                                    </button>
+                                </div>
+                            )}
+                            
+                            {/* Кнопка маршрутизатора в правом углу */}
+                            <button
+                                onClick={() => {
+                                    if (!showRouteBuilder) {
+                                        setShowRouteBuilder(true);
+                                    } else {
+                                        setShowRouteBuilder(false);
+                                        clearRoute();
+                                        setRoutePointA(null);
+                                        setRoutePointB(null);
+                                        setIsOnTrip(false);
+                                    }
+                                }}
+                                className="absolute right-2 top-4 z-20 bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition"
+                                title="Построить маршрут"
+                                style={{
+                                    background: showRouteBuilder ? '#007aff' : 'white',
+                                    color: showRouteBuilder ? 'white' : '#333',
+                                    width: '48px',
+                                    height: '48px',
+                                    border: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '24px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                🚗
+                            </button>
+                        </div>
+                            {showAuthPrompt && !user && (
+                                <div className="custom-card p-5 border border-blue-200 bg-blue-50">
+                                    <h3 className="text-lg font-semibold mb-2">Вы не вошли в систему</h3>
+                                    <p className="text-sm opacity-70 mb-4">
+                                        Войдите или зарегистрируйтесь, чтобы сохранить историю мониторинга, просматривать уведомления и управлять данными.
+                                        Если хотите продолжить просмотр карты без сохранения, нажмите «Позже».
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <button onClick={() => window.location.href = '/accounts/login/'} className="btn-primary py-3">Войти</button>
+                                        <button onClick={() => window.location.href = '/accounts/register/'} className="btn-secondary py-3">Регистрация</button>
+                                        <button onClick={() => setShowAuthPrompt(false)} className="btn-ghost py-3">Позже</button>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {showMyMessages && user && (
+                                <div className="fixed right-6 top-24 z-50 w-[360px] max-w-full bg-white border border-gray-200 shadow-2xl rounded-3xl overflow-hidden">
+                                    <div className="p-5 border-b border-gray-100 bg-slate-50">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div>
+                                                <h3 className="font-semibold">Мои сообщения</h3>
+                                                <p className="text-xs text-slate-500">Ваши отправленные сообщения</p>
+                                            </div>
+                                            <button onClick={() => setShowMyMessages(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="max-h-[400px] overflow-y-auto p-4 space-y-3">
+                                        {userMessages.filter(m => m.user === user?.id).length === 0 ? (
+                                            <p className="text-sm text-slate-500">У вас пока нет сообщений.</p>
+                                        ) : userMessages
+                                            .filter(m => m.user === user?.id)
+                                            .map(m => (
+                                                <div
+                                                    key={m.id}
+                                                    className="p-3 border border-slate-200 rounded-2xl hover:bg-slate-50 cursor-pointer"
+                                                    onClick={() => {
+                                                        setSelectedMessageItem(m);
+                                                        setSelectedPoint(null);
+                                                        setShowMyMessages(false);
+
+                                                        if (mapRef.current) {
+                                                            mapRef.current.flyTo([m.latitude, m.longitude], 14, { animate: true, duration: 1.2 });
+                                                        }
+
+                                                        loadMessageComments(m.id);
+                                                        loadMessageReactions(m.id);
+                                                        fetchWeather(m.latitude, m.longitude, m.title, false);
+                                                    }}
+                                                >
+                                                    <p className="font-medium truncate">{m.title}</p>
+                                                    <p className="text-[11px] text-slate-500">
+                                                        {m.message_type_display} · {new Date(m.created_at).toLocaleString()}
+                                                    </p>
+                                                    <p className="text-[12px] text-slate-500 mt-1 line-clamp-2">
+                                                        {m.message}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="lg:col-span-4">
+                            {(selectedMessageItem || activeData || selectedRoad || showRouteBuilder) ? (
+                                <div className="custom-card p-6 sticky top-6 shadow-xl border-blue-500/20">
+                                    {selectedMessageItem ? (
+                                        <>
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div>
+                                                    <p className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full uppercase">Сообщение</p>
+                                                    <p className="mt-2 text-sm font-semibold">{selectedMessageItem.title}</p>
+                                                    <p className="text-sm opacity-70">{selectedMessageItem.message_type_display} • от {selectedMessageItem.user_name}</p>
+                                                    <p className="text-[10px] text-slate-500 mt-1">{new Date(selectedMessageItem.created_at).toLocaleString()}</p>
+                                                </div>
+                                                <button onClick={() => setSelectedMessageItem(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                                            </div>
+
+                                            <div className="mb-6 text-sm leading-6 text-slate-700">{selectedMessageItem.message}</div>
+
+                                            <div className="grid grid-cols-3 gap-3 mb-6 text-sm text-center">
+                                                <button onClick={() => handleMessageReaction(selectedMessageItem.id, true)} className="border border-slate-200 rounded-xl py-3 hover:bg-slate-50">
+                                                    👍<br />{messageReactions.filter(r => r.is_like).length}
+                                                </button>
+                                                <button onClick={() => handleMessageReaction(selectedMessageItem.id, false)} className="border border-slate-200 rounded-xl py-3 hover:bg-slate-50">
+                                                    👎<br />{messageReactions.filter(r => !r.is_like).length}
+                                                </button>
+                                                {selectedMessageItem.user === user?.id ? (
+                                                    <button onClick={() => handleDeleteMessage(selectedMessageItem.id)} className="border border-red-200 text-red-600 rounded-xl py-3 hover:bg-red-50">
+                                                        🗑️ Удалить
+                                                    </button>
+                                                ) : null}
+                                            </div>
+
+                                            <div className="mb-6">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <h3 className="text-sm font-semibold">Комментарии</h3>
+                                                    <span className="text-[11px] text-slate-500">{messageComments.length} шт.</span>
+                                                </div>
+                                                <div className="space-y-3 max-h-56 overflow-y-auto pr-2">
+                                                    {messageComments.length === 0 ? (
+                                                        <p className="text-sm text-slate-500">Нет комментариев. Будьте первым.</p>
+                                                    ) : messageComments.map(comment => renderComment(comment))}
+                                                </div>
+                                            </div>
+
+                                            <form onSubmit={handleCommentSubmit} className="space-y-3">
+                                                {replyToComment && (
+                                                    <div className="rounded-2xl p-3 bg-blue-50 border border-blue-100 text-sm text-slate-700">
+                                                        Ответ на комментарий пользователя <strong>{replyToComment.user_name}</strong>
+                                                        <button type="button" onClick={() => setReplyToComment(null)} className="ml-3 text-blue-600 hover:underline">Отменить</button>
+                                                    </div>
+                                                )}
+                                                <textarea name="comment" rows="3" className="w-full p-3 border border-slate-200 rounded-2xl" placeholder={replyToComment ? `Ответ ${replyToComment.user_name}` : 'Оставить комментарий'} required></textarea>
+                                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700">Отправить комментарий</button>
+                                            </form>
+                                        </>
+                                    ) : selectedStaticRoad ? (
+                                        <div>
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div>
+                                                    <p className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full uppercase">Дорога</p>
+                                                    <p className="mt-2 text-sm font-semibold">{selectedStaticRoad.name}</p>
+                                                    <p className="text-sm opacity-70">
+                                                        Статус: {roadClosures[selectedStaticRoad.id] ? 'Закрыта' : 'Открыта'}
+                                                    </p>
+                                                    {roadClosures[selectedStaticRoad.id] && (
+                                                        <p className="text-[10px] text-slate-500 mt-1">
+                                                            Причина: {ROAD_CLOSURE_CATEGORIES[roadClosures[selectedStaticRoad.id].category] || 'Другое'}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedStaticRoad(null);
+                                                        updateStaticRoadStyles(null);
+                                                    }}
+                                                    className="text-gray-400 hover:text-gray-600"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+
+                                            {roadClosures[selectedStaticRoad.id] ? (
+                                                <div className="space-y-4">
+                                                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                                                        Эта дорога закрыта и отмечена на карте черным цветом.
+                                                    </div>
+                                                    <button onClick={openStaticRoad} className="w-full bg-emerald-600 text-white py-3 rounded-lg hover:bg-emerald-700">
+                                                        Открыть дорогу
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    <label className="block">
+                                                        <span className="text-sm font-semibold text-slate-700">Категория закрытия</span>
+                                                        <select
+                                                            value={roadClosureCategory}
+                                                            onChange={e => setRoadClosureCategory(e.target.value)}
+                                                            className="mt-2 w-full p-3 border border-slate-200 rounded-lg bg-white"
+                                                        >
+                                                            {Object.entries(ROAD_CLOSURE_CATEGORIES).map(([value, label]) => (
+                                                                <option key={value} value={value}>{label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                    <button onClick={closeStaticRoad} className="w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700">
+                                                        Закрыть дорогу
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : selectedRoad ? (
+                                        <div>
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div>
+                                                    <p className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded-full uppercase">Состояние трассы</p>
+                                                    <p className="mt-2 text-sm font-semibold">{selectedRoad.name || selectedRoad.route_name || 'Участок дороги'}</p>
+                                                    <p className="text-sm opacity-70">Статус: {selectedRoad.status === 'open' ? 'Открыта' : selectedRoad.status === 'closed' ? 'bg-yellow-100 text-yellow-800' : 'Частично ограничена'}</p>
+                                                    <p className="text-[10px] text-slate-500 mt-1">Обновлено: {new Date(selectedRoad.updated_at).toLocaleString()}</p>
+                                                </div>
+                                                <button onClick={() => setSelectedRoad(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                                            </div>
+                                            <div className="mb-6 text-sm leading-6 text-slate-700">
+                                                {selectedRoad.description || 'Описание отсутствует.'}
+                                            </div>
+                                            {selectedRoad.weather && (
+                                                <div className="mb-4 text-sm text-slate-700">
+                                                    <p>Погода: {selectedRoad.weather.temperature}°C, {selectedRoad.weather.precipitation || 'нет данных'}</p>
+                                                    <p>Ветер: {selectedRoad.weather.wind_speed} м/с, видимость {selectedRoad.weather.visibility} м</p>
+                                                </div>
+                                            )}
+                                            {selectedRoad.warnings?.length > 0 && (
+                                                <div className="mb-4">
+                                                    <p className="text-sm font-semibold mb-2">Предупреждения</p>
+                                                    <ul className="list-disc list-inside text-sm text-slate-700">
+                                                        {selectedRoad.warnings.map(w => (
+                                                            <li key={w.id}>{w.title}: {w.description}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            {selectedRoad.dangerous_areas?.length > 0 && (
+                                                <div className="mb-4">
+                                                    <p className="text-sm font-semibold mb-2">Опасные участки</p>
+                                                    <ul className="list-disc list-inside text-sm text-slate-700">
+                                                        {selectedRoad.dangerous_areas.map(a => (
+                                                            <li key={a.id}>{a.danger_type}: {a.description}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : activeData ? (
+                                        <>
+                                            <div className="mt-6 pt-6 border-t border-slate-200">
+                                                <div className="flex justify-between items-center mb-6">
+                                                    <div>
+                                                        <p className="text-xs font-bold px-2 py-1 bg-blue-100 text-blue-600 rounded-full uppercase">Погода на месте</p>
+                                                        <p className="mt-2 text-sm font-semibold">{activeData.title}</p>
+                                                    </div>
+                                                    <span className="text-[10px] opacity-40">{activeData.lat.toFixed(4)}°N</span>
+                                                </div>
+                                                <div className="mb-8">
+                                                    <div className="text-6xl font-light mb-2">{activeData.temp}°C</div>
+                                                    <div className="flex flex-col gap-3 text-sm opacity-70">
+                                                        <span>💧 {activeData.hum}% влаж.</span>
+                                                        <span>🌬️ {activeData.wind} м/с</span>
+                                                        <span>☔ {activeData.precipitation}</span>
+                                                        <span>👁️ {activeData.visibility} м</span>
+                                                        <span>❄️ Вероятность гололеда: {activeData.iceProbability}%</span>
+                                                        {activeData.mcsWarning && <span>⚠️ {activeData.mcsWarning}</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-3 mb-6 pb-6 border-b border-gray-200">
+                                                <p className="text-[10px] font-bold opacity-30 uppercase">Прогноз на 4 дня</p>
+                                                {activeData.forecast.map((f, i) => (
+                                                    <div key={i} className="flex justify-between items-center text-sm py-2 border-b border-gray-50 dark:border-gray-800">
+                                                        <span className="capitalize">{f.day}</span>
+                                                        <span className="font-medium">{f.max}° / <span className="opacity-40">{f.min}°</span></span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div className="flex gap-2 mb-6">
+                                                <button onClick={() => { setActiveData(null); }} className="px-3 py-2 text-gray-400 hover:text-gray-600">✕</button>
+                                            </div>
+
+            
+                                        </>
+                                    ) : showRouteBuilder ? (
+                                        <div>
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div>
+                                                    <p className="text-xs font-bold px-2 py-1 bg-blue-100 text-blue-600 rounded-full uppercase">🚗 Маршрут</p>
+                                                    <p className="mt-2 text-lg font-semibold">Построение пути</p>
+                                                    <p className="text-sm opacity-70 mt-1">
+                                                        {isOnTrip ? 'В пути...' : routePointB ? 'Маршрут построен' : routePointA ? 'Выберите точку B' : 'Выберите точку A'}
+                                                    </p>
+                                                </div>
+                                                <button onClick={() => { setShowRouteBuilder(false); clearRoute(); setRoutePointA(null); setRoutePointB(null); setIsOnTrip(false); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+                                            </div>
+
+                                            {/* Точка A */}
+                                            <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div style={{ background: '#ff6b6b', color: 'white', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px' }}>A</div>
+                                                        <div>
+                                                            <p className="text-xs font-bold text-red-600 uppercase">Начало маршрута</p>
+                                                            {routePointA && <p className="text-xs text-slate-600 mt-1">{routePointA.lat.toFixed(4)}°N, {routePointA.lng.toFixed(4)}°E</p>}
+                                                        </div>
+                                                    </div>
+                                                    {routePointA && (
+                                                        <button onClick={() => removePoint('A')} className="text-red-500 hover:text-red-700 text-xl font-bold">✕</button>
+                                                    )}
+                                                </div>
+                                                {!routePointA && (
+                                                    <p className="text-sm text-slate-600 ml-12">Нажмите на карту или используйте кнопку ниже</p>
+                                                )}
+                                            </div>
+
+                                            {/* Точка B */}
+                                            <div className="mb-6 p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div style={{ background: '#51cf66', color: 'white', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '16px' }}>B</div>
+                                                        <div>
+                                                            <p className="text-xs font-bold text-emerald-600 uppercase">Конец маршрута</p>
+                                                            {routePointB && <p className="text-xs text-slate-600 mt-1">{routePointB.lat.toFixed(4)}°N, {routePointB.lng.toFixed(4)}°E</p>}
+                                                        </div>
+                                                    </div>
+                                                    {routePointB && (
+                                                        <button onClick={() => removePoint('B')} className="text-emerald-500 hover:text-emerald-700 text-xl font-bold">✕</button>
+                                                    )}
+                                                </div>
+                                                {!routePointB && routePointA && (
+                                                    <p className="text-sm text-slate-600 ml-12">Нажмите на карту или используйте кнопку ниже</p>
+                                                )}
+                                                {!routePointA && (
+                                                    <p className="text-sm text-slate-500 ml-12 opacity-50">Сначала выберите точку A</p>
+                                                )}
+                                            </div>
+
+                                            {/* Кнопки управления */}
+                                            <div className="space-y-3 mb-6">
+                                                {!routePointA && (
+                                                    <button
+                                                        onClick={requestUserLocation}
+                                                        className="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition font-medium"
+                                                    >
+                                                        📍 Использовать мое местоположение
+                                                    </button>
+                                                )}
+                                                
+                                                {routePointB && !isOnTrip && (
+                                                    <button
+                                                        onClick={startTrip}
+                                                        className="w-full bg-emerald-600 text-white py-3 rounded-xl hover:bg-emerald-700 transition font-medium"
+                                                    >
+                                                        ▶️ Начать поездку
+                                                    </button>
+                                                )}
+                                                
+                                                {isOnTrip && (
+                                                    <button
+                                                        onClick={endTrip}
+                                                        className="w-full bg-red-600 text-white py-3 rounded-xl hover:bg-red-700 transition font-medium"
+                                                    >
+                                                        ⏹️ Завершить поездку
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Информация о маршруте */}
+                                            {route && (
+                                                <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+                                                    <p className="text-xs font-bold text-blue-600 uppercase mb-2">📊 Информация о маршруте</p>
+                                                    <div className="text-sm text-slate-700 space-y-2">
+                                                        <div className="flex justify-between">
+                                                            <span>Расстояние:</span>
+                                                            <span className="font-medium">{calculateDistance(routePointA.lat, routePointA.lng, routePointB.lat, routePointB.lng).toFixed(1)} км</span>
+                                                        </div>
+                                                        <div className="text-xs text-slate-600 mt-2">
+                                                            ⚠️ Маршрут обходит закрытые дороги
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <div className="custom-card p-10 text-center flex flex-col items-center justify-center h-64 border-dashed">
+                                    <div className="text-3xl mb-4 opacity-20">📍</div>
+                                    <p className="text-sm opacity-50">Выберите участок дороги на карте для получения аналитики</p>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+                    {/* ПЛАВАЮЩАЯ ПАНЕЛЬ: СПИСОК ПРЕДУПРЕЖДЕНИЙ (СООБЩЕНИЯ + ЗАКРЫТЫЕ ДОРОГИ) */}
+                    {showActiveWarnings && (
+                        <div className="absolute top-[140px] left-[24px] bg-white border border-gray-200 rounded-xl shadow-2xl p-4 z-[9999] w-80 max-h-96 overflow-y-auto">
+                            <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100">
+                                <h4 className="font-semibold text-sm text-gray-800">Предупреждения ({combinedWarnings.length})</h4>
+                                <button onClick={() => setShowActiveWarnings(false)} className="text-gray-400 hover:text-gray-600 font-bold text-sm">✕</button>
+                            </div>
+                            
+                            {combinedWarnings.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-4">Нет активных предупреждений</p>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {combinedWarnings.map((w, idx) => (
+                                        <div 
+                                            key={idx}
+                                            className="p-2 text-xs rounded border border-gray-100 hover:bg-blue-50 cursor-pointer transition-all"
+                                            onClick={() => {
+                                                if (w.isRoadClosure) {
+                                                    // Если это закрытая дорога, ищем её геометрию и летим туда
+                                                    if (w.roadFeature && mapRef.current && typeof extractRoadCoordinates === 'function') {
+                                                        const coords = extractRoadCoordinates(w.roadFeature.geometry);
+                                                        if (coords.length > 0) {
+                                                            const mid = coords[Math.floor(coords.length / 2)];
+                                                            mapRef.current.flyTo([mid[0], mid[1]], 16, { animate: true, duration: 1 });
+                                                        }
+                                                    }
+                                                    if (typeof setSelectedStaticRoad === 'function') setSelectedStaticRoad(w.roadFeature);
+                                                } else {
+                                                    // Если это обычное предупреждение с карты
+                                                    const lat = w.latitude || w.lat;
+                                                    const lng = w.longitude || w.lng;
+                                                    if (lat && lng && mapRef.current) {
+                                                        mapRef.current.flyTo([lat, lng], 16, { animate: true, duration: 1 });
+                                                    }
+                                                    if (typeof setSelectedMessageItem === 'function') setSelectedMessageItem(w);
+                                                }
+                                            }}
+                                        >
+                                            <div className="font-medium text-gray-700 truncate">
+                                                {w.isRoadClosure ? '🚧' : '📍'} {w.title}
+                                            </div>
+                                            <div className="text-gray-400 mt-1 truncate">{w.description}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ПЛАВАЮЩАЯ ПАНЕЛЬ: СПИСОК ОПАСНЫХ УЧАСТКОВ (ТОЛЬКО АВАРИИ) */}
+                    {showDangerousAreas && (
+                        <div className="absolute top-[140px] left-[360px] bg-white border border-gray-200 rounded-xl shadow-2xl p-4 z-[9999] w-80 max-h-96 overflow-y-auto">
+                            <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100">
+                                <h4 className="font-semibold text-sm text-gray-800">Аварии на дорогах ({accidentAreas.length})</h4>
+                                <button onClick={() => setShowDangerousAreas(false)} className="text-gray-400 hover:text-gray-600 font-bold text-sm">✕</button>
+                            </div>
+                            
+                            {accidentAreas.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-4">Нет зафиксированных аварий</p>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {accidentAreas.map((w, idx) => (
+                                        <div 
+                                            key={idx}
+                                            className="p-2 text-xs rounded border border-gray-100 hover:bg-amber-50 cursor-pointer transition-all"
+                                            onClick={() => {
+                                                // 1. Центрируем карту по координатам аварии
+                                                const lat = w.latitude || w.lat;
+                                                const lng = w.longitude || w.lng;
+                                                if (lat && lng && mapRef.current) {
+                                                    mapRef.current.flyTo([lat, lng], 16, { animate: true, duration: 1 });
+                                                }
+                                                
+                                                // 2. ОТКРЫВАЕМ ПАНЕЛЬ: Передаем объект аварии в твой рабочий стейт
+                                                setSelectedMessageItem(w); 
+                                            }}
+                                        >
+                                            <div className="font-medium text-amber-800 truncate">🚨 {w.title || 'ДТП'}</div>
+                                            {w.description && <div className="text-gray-400 mt-1 truncate">{w.description}</div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+
+    </script>
+    {% endverbatim %}
+</body>
+</html>
