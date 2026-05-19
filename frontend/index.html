@@ -110,6 +110,7 @@
         const { useState, useEffect, useRef } = React;
 
         function App() {
+            const url = "{% static 'roads_light.json' %}";
             const [roads, setRoads] = useState([]);
             const [activeData, setActiveData] = useState(null);
             const [warnings, setWarnings] = useState([]);
